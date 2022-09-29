@@ -1,14 +1,15 @@
 import asyncio
+import urllib.robotparser
 from dataclasses import dataclass
 from typing import Optional, List
+
+import aiohttp
 import bs4
 from yarl import URL
-import aiohttp
-import lxml
-
 
 MAX_DEPTH = 10
 PARSED_URLS = set()
+VISITED_HOSTS = {}
 
 
 @dataclass
@@ -26,6 +27,7 @@ class FetchTask(Task):
         if self.depth + 1 > MAX_DEPTH:
             return []
         soup = bs4.BeautifulSoup(data, 'lxml')
+        # soup.
         res = []
         for link in soup.find_all('a', href=True):
             new_url = URL(link['href'])
@@ -36,7 +38,19 @@ class FetchTask(Task):
                     path=new_url.path,
                     query_string=new_url.query_string
                 )
-                if new_url in PARSED_URLS:
+                robots_url = str(URL.build(
+                    scheme=self.url.scheme,
+                    host=self.url.host,
+                    path="/robots.txt"
+                ))
+
+                if self.url.host not in VISITED_HOSTS:
+                    rp = urllib.robotparser.RobotFileParser()
+                    rp.set_url(robots_url)
+                    rp.read()
+                    VISITED_HOSTS[self.url.host] = rp
+
+                if new_url in PARSED_URLS or not VISITED_HOSTS[self.url.host].can_fetch("*", str(new_url)):
                     continue
                 PARSED_URLS.add(new_url)
                 res.append(FetchTask(
@@ -47,14 +61,17 @@ class FetchTask(Task):
         return res
 
     async def perform(self, pool):
+        user_agent = {
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36 OPR/72.0.3815.465 (Edition Yx GX)',
+        }
         async with aiohttp.ClientSession() as session:
-            async with session.get(self.url) as resp:
+            async with session.get(self.url, headers=user_agent) as resp:
                 print(self.url, resp.status)
                 data = await resp.text()
                 res: List[FetchTask] = \
                     await asyncio.get_running_loop().run_in_executor(
-                    None, self.parser, data
-                )
+                        None, self.parser, data
+                    )
                 for task in res:
                     await pool.queue.put(task)
 
@@ -100,25 +117,21 @@ class Pool:
             await self._stop_event.wait()
 
 
-async def start(pool):
+async def async_start(pool, url):
     await pool.queue.put(FetchTask(
         tid=1,
-        url=URL('https://habr.com/ru/hub/python/'),
+        url=URL(url),
         depth=1))
     pool.start()
     await pool.queue.join()
     await pool.stop()
 
 
-def main():
+def start(url, depth):
     loop = asyncio.get_event_loop()
-    pool = Pool(3)
+    pool = Pool(10)
     try:
-        loop.run_until_complete(start(pool))
+        loop.run_until_complete(async_start(pool, url))
     except KeyboardInterrupt:
         loop.run_until_complete(pool.stop())
         loop.close()
-
-
-if __name__ == '__main__':
-    main()
