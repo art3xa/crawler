@@ -1,13 +1,9 @@
 import asyncio
 import urllib.robotparser
 from dataclasses import dataclass
-import time
 from typing import Optional, List
 
 import aiohttp
-from html.parser import HTMLParser
-from html.entities import name2codepoint
-import bs4
 from yarl import URL
 import re
 
