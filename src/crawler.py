@@ -1,11 +1,15 @@
 import asyncio
 import urllib.robotparser
 from dataclasses import dataclass
+import time
 from typing import Optional, List
 
 import aiohttp
+from html.parser import HTMLParser
+from html.entities import name2codepoint
 import bs4
 from yarl import URL
+import re
 
 MAX_DEPTH = 10
 PARSED_URLS = set()
@@ -17,6 +21,13 @@ class Task:
     tid: int
 
 
+class MyNormalWrapperForHTMLParser:
+    linkregex = re.compile('<a\s*href=[\'|"](.*?)[\'"].*?>')
+
+    def parse(self, data):
+        return [a for a in self.linkregex.findall(data)]
+
+
 @dataclass
 class FetchTask(Task):
     tid: int
@@ -26,11 +37,14 @@ class FetchTask(Task):
     def parser(self, data: str) -> List['FetchTask']:
         if self.depth + 1 > MAX_DEPTH:
             return []
-        soup = bs4.BeautifulSoup(data, 'lxml')
-        # soup.
         res = []
-        for link in soup.find_all('a', href=True):
-            new_url = URL(link['href'])
+        parser = MyNormalWrapperForHTMLParser()
+        for link in parser.parse(data):
+            try:
+                new_url = URL(link)
+            except:
+                print(link)
+
             if new_url.host is None and new_url.path.startswith('/'):
                 new_url = URL.build(
                     scheme=self.url.scheme,
@@ -66,7 +80,7 @@ class FetchTask(Task):
         }
         async with aiohttp.ClientSession() as session:
             async with session.get(self.url, headers=user_agent) as resp:
-                print(self.url, resp.status)
+                #print(self.url, resp.status)
                 data = await resp.text()
                 res: List[FetchTask] = \
                     await asyncio.get_running_loop().run_in_executor(
