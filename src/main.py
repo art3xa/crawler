@@ -1,4 +1,5 @@
 import argparse
+
 import crawler
 
 parser = argparse.ArgumentParser()

@@ -1,11 +1,11 @@
 import asyncio
+import re
 import urllib.robotparser
 from dataclasses import dataclass
 from typing import Optional, List
 
 import aiohttp
 from yarl import URL
-import re
 
 MAX_DEPTH = 10
 PARSED_URLS = set()
@@ -18,10 +18,10 @@ class Task:
 
 
 class MyNormalWrapperForHTMLParser:
-    linkregex = re.compile('<a\s*href=[\'|"](.*?)[\'"].*?>')
+    link_regex = re.compile('<a\\s*href=[\'|"](.*?)[\'"].*?>')
 
     def parse(self, data):
-        return [a for a in self.linkregex.findall(data)]
+        return [a for a in self.link_regex.findall(data)]
 
 
 @dataclass
@@ -31,6 +31,7 @@ class FetchTask(Task):
     depth: int
 
     def parser(self, data: str) -> List['FetchTask']:
+        global new_url
         if self.depth + 1 > MAX_DEPTH:
             return []
         res = []
@@ -38,10 +39,11 @@ class FetchTask(Task):
         for link in parser.parse(data):
             try:
                 new_url = URL(link)
-            except:
+            except BaseException:
                 print(link)
 
-            if new_url.host is None and new_url.path.startswith('/'):
+            if new_url.host is None and new_url.path.startswith('/') \
+                    and str(new_url).encode().decode() == str(new_url):
                 new_url = URL.build(
                     scheme=self.url.scheme,
                     host=self.url.host,
@@ -60,7 +62,9 @@ class FetchTask(Task):
                     rp.read()
                     VISITED_HOSTS[self.url.host] = rp
 
-                if new_url in PARSED_URLS or not VISITED_HOSTS[self.url.host].can_fetch("*", str(new_url)):
+                if new_url in PARSED_URLS \
+                        or not VISITED_HOSTS[self.url.host] \
+                        .can_fetch("*", str(new_url)):
                     continue
                 PARSED_URLS.add(new_url)
                 res.append(FetchTask(
@@ -72,11 +76,14 @@ class FetchTask(Task):
 
     async def perform(self, pool):
         user_agent = {
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36 OPR/72.0.3815.465 (Edition Yx GX)',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                          'AppleWebKit/537.36 (KHTML, like Gecko) '
+                          'Chrome/86.0.4240.198 Safari/537.36 '
+                          'OPR/72.0.3815.465 (Edition Yx GX)',
         }
         async with aiohttp.ClientSession() as session:
             async with session.get(self.url, headers=user_agent) as resp:
-                #print(self.url, resp.status)
+                # print(self.url, resp.status)
                 data = await resp.text()
                 res: List[FetchTask] = \
                     await asyncio.get_running_loop().run_in_executor(
