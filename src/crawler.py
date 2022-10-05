@@ -49,8 +49,7 @@ class FetchTask(Task):
                                     path=new_url.path,
                                     query_string=new_url.query_string)
 
-            if len(VISITED_HOSTS) > 0 and list(VISITED_HOSTS.keys())[
-                0] not in new_url.host:
+            if len(VISITED_HOSTS) > 0 and list(VISITED_HOSTS.keys())[0] not in new_url.host:
                 continue
 
             if new_url.host not in VISITED_HOSTS:
