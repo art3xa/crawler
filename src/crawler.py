@@ -9,11 +9,7 @@ from yarl import URL
 
 MAX_DEPTH = 10
 PARSED_URLS = set()
-rp = urllib.robotparser.RobotFileParser()
-rp.set_url('https://habr.com/robots.txt')
-rp.read()
-
-VISITED_HOSTS = {'habr.com': rp}
+VISITED_HOSTS = {}
 
 
 @dataclass
@@ -41,7 +37,6 @@ class FetchTask(Task):
     depth: int
 
     def parser(self, data: str) -> List['FetchTask']:
-        global new_url
         if self.depth + 1 > MAX_DEPTH:
             return []
         res = []
@@ -50,33 +45,21 @@ class FetchTask(Task):
             new_url = URL(link)
 
             if new_url.host is None and new_url.path.startswith('/'):
-                new_url = URL.build(
-                    scheme=self.url.scheme,
-                    host=self.url.host,
-                    path=new_url.path,
-                    query_string=new_url.query_string
-                )  # ЭТО АБСОЛЮТНЫЙ ЮРЛ /aboba.php -> vk.com/aboba.php
+                new_url = URL.build(scheme=self.url.scheme, host=self.url.host, path=new_url.path,
+                                query_string=new_url.query_string)  # ЭТО АБСОЛЮТНЫЙ ЮРЛ /aboba.php -> vk.com/aboba.php
 
             if len(VISITED_HOSTS) > 0 and list(VISITED_HOSTS.keys())[0] not in new_url.host:
                 continue
 
-            if self.url.host not in VISITED_HOSTS:
-                robots_url = URL.build(
-                    scheme=self.url.scheme,
-                    host=self.url.host,
-                    path="/robots.txt"
-                )  # ЭТО ЧЁ
-
+            if new_url.host not in VISITED_HOSTS:
+                robots_url = URL.build(scheme=new_url.scheme, host=new_url.host, path="/robots.txt")  # ЭТО ЧЁ
                 rp = urllib.robotparser.RobotFileParser()
                 rp.set_url(str(robots_url))
                 rp.read()
-                VISITED_HOSTS[self.url.host] = rp  # ВСЕГДА ОДИН ХОСТ
+                VISITED_HOSTS[new_url.host] = rp  # ВСЕГДА ОДИН ХОСТ
 
-            if new_url in PARSED_URLS \
-                    or not VISITED_HOSTS[self.url.host].can_fetch("*", str(new_url)):
+            if new_url in PARSED_URLS or not VISITED_HOSTS[self.url.host].can_fetch("*", str(new_url)):
                 continue  # ПРОВЕРКА: ЮРЛ УЖЕ БЫЛ ИЛИ РОБОТС.ТХТ ЗАПРЕЩАЕТ НАМ ХОДИТЬ ТУДАЭ
-
-                # print(VISITED_HOSTS)
 
             PARSED_URLS.add(new_url)  # ДОБАВЛЯЕМ НОВУЮ ССЫЛОЧКУ
             res.append(FetchTask(
@@ -84,9 +67,6 @@ class FetchTask(Task):
                 url=new_url,
                 depth=self.depth + 1
             ))
-        for i in [str(re) for re in res]:
-            if 'twitter.com' in i:
-                print("pizda")
         return res
 
     async def perform(self, pool):
@@ -98,17 +78,16 @@ class FetchTask(Task):
         }
 
         async with aiohttp.ClientSession() as session:
-            if 'twitter.com' in str(self.url):
-                print('xyi')
-            async with session.get(self.url, headers=user_agent) as resp:
+            async with session.get(self.url, headers=user_agent, allow_redirects=True) as resp:
                 print(self.url, resp.status)
-                data = await resp.text()
-                res: List[FetchTask] = \
-                    await asyncio.get_running_loop().run_in_executor(
-                        None, self.parser, data
-                    )
-                for task in res:
-                    await pool.queue.put(task)
+                if resp.content_type == 'text/html':
+                    data = await resp.text()
+                    res: List[FetchTask] = \
+                        await asyncio.get_running_loop().run_in_executor(
+                            None, self.parser, data
+                        )
+                    for task in res:
+                        await pool.queue.put(task)
 
 
 class Pool:
@@ -162,9 +141,11 @@ async def async_start(pool, url):
     await pool.stop()
 
 
-def start(url, depth):
+def start(url, depth, threads_count):
     loop = asyncio.get_event_loop()
-    pool = Pool(10)
+    pool = Pool(threads_count)
+    global MAX_DEPTH
+    MAX_DEPTH = depth
     try:
         loop.run_until_complete(async_start(pool, url))
     except KeyboardInterrupt:
