@@ -2,12 +2,12 @@ import asyncio
 import urllib.robotparser
 from dataclasses import dataclass
 from typing import Optional, List
-from lxml import html
 
 import aiohttp
+from lxml import html
 from yarl import URL
 
-MAX_DEPTH = 10
+MAX_DEPTH = 3
 PARSED_URLS = set()
 VISITED_HOSTS = {}
 
@@ -17,12 +17,13 @@ class Task:
     tid: int
 
 
-class MyNormalWrapperForHTMLParser:
-    def parse(self, data):
+class WrapperForHTMLParser:
+    @staticmethod
+    def parse_links(data):
         tree = html.fromstring(data)
-        linkList = tree.xpath('//a')
+        link_list = tree.xpath('//a')
         result = []
-        for link in linkList:
+        for link in link_list:
             url = str(link.get('href'))
             if '.' in url and 'http' in url[0:5]:
                 result.append(url)
@@ -40,33 +41,36 @@ class FetchTask(Task):
         if self.depth + 1 > MAX_DEPTH:
             return []
         res = []
-        parser = MyNormalWrapperForHTMLParser()
-        for link in parser.parse(data):
+        for link in WrapperForHTMLParser().parse_links(data):
             new_url = URL(link)
 
             if new_url.host is None and new_url.path.startswith('/'):
-                new_url = URL.build(scheme=self.url.scheme, host=self.url.host, path=new_url.path,
-                                    query_string=new_url.query_string)  # ЭТО АБСОЛЮТНЫЙ ЮРЛ /aboba.php -> vk.com/aboba.php
+                new_url = URL.build(scheme=self.url.scheme, host=self.url.host,
+                                    path=new_url.path,
+                                    query_string=new_url.query_string)
 
-            if len(VISITED_HOSTS) > 0 and list(VISITED_HOSTS.keys())[0] not in new_url.host:
+            if len(VISITED_HOSTS) > 0 and list(VISITED_HOSTS.keys())[
+                0] not in new_url.host:
                 continue
 
             if new_url.host not in VISITED_HOSTS:
-                robots_url = URL.build(scheme=new_url.scheme, host=new_url.host, path="/robots.txt")  # ЭТО ЧЁ
+                robots_url = URL.build(scheme=new_url.scheme,
+                                       host=new_url.host, path="/robots.txt")
                 rp = urllib.robotparser.RobotFileParser()
                 rp.set_url(str(robots_url))
                 rp.read()
-                VISITED_HOSTS[new_url.host] = rp  # ВСЕГДА ОДИН ХОСТ
+                VISITED_HOSTS[new_url.host] = rp
 
             if new_url in PARSED_URLS or not VISITED_HOSTS[self.url.host].can_fetch("*", str(new_url)):
-                continue  # ПРОВЕРКА: ЮРЛ УЖЕ БЫЛ ИЛИ РОБОТС.ТХТ ЗАПРЕЩАЕТ НАМ ХОДИТЬ ТУДАЭ
+                continue
 
-            PARSED_URLS.add(new_url)  # ДОБАВЛЯЕМ НОВУЮ ССЫЛОЧКУ
+            PARSED_URLS.add(new_url)
             res.append(FetchTask(
                 tid=self.tid,
                 url=new_url,
                 depth=self.depth + 1
             ))
+
         return res
 
     async def perform(self, pool):
