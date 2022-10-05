@@ -46,7 +46,7 @@ class FetchTask(Task):
 
             if new_url.host is None and new_url.path.startswith('/'):
                 new_url = URL.build(scheme=self.url.scheme, host=self.url.host, path=new_url.path,
-                                query_string=new_url.query_string)  # ЭТО АБСОЛЮТНЫЙ ЮРЛ /aboba.php -> vk.com/aboba.php
+                                    query_string=new_url.query_string)  # ЭТО АБСОЛЮТНЫЙ ЮРЛ /aboba.php -> vk.com/aboba.php
 
             if len(VISITED_HOSTS) > 0 and list(VISITED_HOSTS.keys())[0] not in new_url.host:
                 continue
