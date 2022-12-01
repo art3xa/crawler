@@ -7,14 +7,14 @@ import re
 import aiohttp
 from lxml import html
 from yarl import URL
-
+import threading
 
 MAX_DEPTH = 3
 PARSED_URLS = set()
 VISITED_HOSTS = {}
 
 url_re = re.compile(r"https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)")
-
+lock = threading.Lock()
 
 @dataclass
 class Task:
@@ -81,7 +81,7 @@ class FetchTask(Task):
         return res
 
     def save_page(self, url, data, parsed_urls):
-        t = data
+        temp = data
         parsed_urls = list(map(str, parsed_urls))
         for i in range(len(parsed_urls)):
             path = ""
@@ -97,7 +97,7 @@ class FetchTask(Task):
                     path = path[0:-1] + ".html"
             path = path.replace("//", "/")
             if "&" not in path and "=" not in path:
-                t = t.replace(f'"{parsed_urls[i]}"', f'"{path}"')
+                temp = temp.replace(f'"{parsed_urls[i]}"', f'"{path}"')
 
         path = self.Downloads + url.host + url.path
         path = path.replace("/", "\\")
@@ -106,12 +106,14 @@ class FetchTask(Task):
         else:
             path += ".html"
 
+        lock.acquire()
         if not os.path.exists(os.path.dirname(path)):
             os.makedirs(os.path.dirname(path))
 
         with open(path, "w") as f:
             print(path)
-            f.write(t)
+            f.write(temp)
+        lock.release()
 
     async def perform(self, pool):
         user_agent = {
