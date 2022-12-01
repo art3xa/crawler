@@ -3,14 +3,17 @@ import os
 import urllib.robotparser
 from dataclasses import dataclass
 from typing import Optional, List
-
+import re
 import aiohttp
 from lxml import html
 from yarl import URL
 
+
 MAX_DEPTH = 3
 PARSED_URLS = set()
 VISITED_HOSTS = {}
+
+url_re = re.compile(r"https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)")
 
 
 @dataclass
@@ -26,7 +29,7 @@ class WrapperForHTMLParser:
         result = []
         for link in link_list:
             url = str(link.get('href'))
-            if ('.' in url and 'http' in url[0:5]) or url[0] == "/":  # парсим абсол и относ ссылки ВСЕ НАХУЙ
+            if re.match(url_re, url) or url[0] == "/":
                 result.append(url)
 
         return result
@@ -37,7 +40,7 @@ class FetchTask(Task):
     tid: int
     url: URL
     depth: int
-    Downloads: str = r"C:\Users\user\Desktop\Donwloads\\"
+    Downloads: str = r"\CrawlerDownloads\\"
 
     def parser(self, cur_page_link, data: str) -> List['FetchTask']:
         if self.depth + 1 > MAX_DEPTH:
@@ -47,14 +50,11 @@ class FetchTask(Task):
         links_on_cur_page = WrapperForHTMLParser().parse_links(data)
         for link in links_on_cur_page:
             new_url = URL(link)
-            # clear_no_filter_urls.append(new_url)
-
             if new_url.host is None and new_url.path.startswith('/'):
-                clear_no_filter_urls.append(new_url)  # относ ссылки
+                clear_no_filter_urls.append(new_url)
                 new_url = URL.build(scheme=self.url.scheme, host=self.url.host,
                                     path=new_url.path,
                                     query_string=new_url.query_string)
-
 
             if len(VISITED_HOSTS) > 0 and list(VISITED_HOSTS.keys())[0] not in new_url.host:
                 continue
@@ -82,7 +82,6 @@ class FetchTask(Task):
 
     def save_page(self, url, data, parsed_urls):
         t = data
-        print(parsed_urls)
         parsed_urls = list(map(str, parsed_urls))
         for i in range(len(parsed_urls)):
             path = ""
@@ -104,11 +103,14 @@ class FetchTask(Task):
         path = path.replace("/", "\\")
         if path[-1] == '\\':
             path = path[0:-1] + ".html"
+        else:
+            path += ".html"
 
         if not os.path.exists(os.path.dirname(path)):
             os.makedirs(os.path.dirname(path))
 
         with open(path, "w") as f:
+            print(path)
             f.write(t)
 
     async def perform(self, pool):
@@ -121,7 +123,7 @@ class FetchTask(Task):
 
         async with aiohttp.ClientSession() as session:
             async with session.get(self.url, headers=user_agent, allow_redirects=True) as resp:
-                print(self.url, resp.status)
+                # print(self.url, resp.status)
                 if resp.content_type == 'text/html':
                     data = await resp.text()
                     # self.save_page(self.url, data)
