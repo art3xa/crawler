@@ -16,6 +16,7 @@ VISITED_HOSTS = {}
 url_re = re.compile(r"https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)")
 lock = threading.Lock()
 
+
 @dataclass
 class Task:
     tid: int
@@ -56,7 +57,8 @@ class FetchTask(Task):
                                     path=new_url.path,
                                     query_string=new_url.query_string)
 
-            if len(VISITED_HOSTS) > 0 and list(VISITED_HOSTS.keys())[0] not in new_url.host:
+            if len(VISITED_HOSTS) > 0 and list(
+                    VISITED_HOSTS.keys())[0] not in new_url.host:
                 continue
             clear_no_filter_urls.append(new_url)
             if new_url.host not in VISITED_HOSTS:
@@ -86,12 +88,14 @@ class FetchTask(Task):
         for i in range(len(parsed_urls)):
             path = ""
             if "http" in parsed_urls[i][0:4] and '.' in parsed_urls[i]:
-                path = self.Downloads + URL(parsed_urls[i]).host + URL(parsed_urls[i]).path
+                path = self.Downloads + \
+                    URL(parsed_urls[i]).host + URL(parsed_urls[i]).path
                 path = path.replace("/", "\\")
                 if path[-1] == '\\':
                     path = path[0:-1] + ".html"
             elif "/" == parsed_urls[i][0]:
-                path = self.Downloads + URL(url).host + URL(parsed_urls[i]).path
+                path = self.Downloads + \
+                    URL(url).host + URL(parsed_urls[i]).path
                 path = path.replace("/", "\\")
                 if path[-1] == '\\':
                     path = path[0:-1] + ".html"
@@ -132,7 +136,7 @@ class FetchTask(Task):
                     list_tasks: List[FetchTask] = \
                         await asyncio.get_running_loop().run_in_executor(
                             None, self.parser, self.url, data
-                        )
+                    )
                     for task in list_tasks:
                         await pool.queue.put(task)
 
