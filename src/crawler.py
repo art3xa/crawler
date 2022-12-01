@@ -103,13 +103,13 @@ class FetchTask(Task):
                 temp = temp.replace(f'"{parsed_urls[i]}"', f'"{path}"')
         return temp
 
-    def save_page(self, url, data, parsed_urls):
+    def save_page(self, url: URL, data: str, parsed_urls: List[URL]):
         parsed_urls = list(map(str, parsed_urls))
         temp = self.format_path(url, data, parsed_urls)
         path = self.format_path_html(url)
         self.save(path, temp)
 
-    def format_path_html(self, url):
+    def format_path_html(self, url: URL) -> str:
         path = self.Downloads + url.host + url.path
         path = path.replace("/", "\\")
         if path[-1] == '\\':
@@ -119,13 +119,12 @@ class FetchTask(Task):
         return path
 
     @staticmethod
-    def save(path, temp):
+    def save(path: str, temp: str) -> None:
         lock.acquire()
         if not os.path.exists(os.path.dirname(path)):
             os.makedirs(os.path.dirname(path))
 
         with open(path, "w") as f:
-            print(path)
             f.write(temp)
         lock.release()
 
@@ -139,10 +138,8 @@ class FetchTask(Task):
 
         async with aiohttp.ClientSession() as session:
             async with session.get(self.url, headers=user_agent, allow_redirects=True) as resp:
-                # print(self.url, resp.status)
                 if resp.content_type == 'text/html':
                     data = await resp.text()
-                    # self.save_page(self.url, data)
                     list_tasks: List[FetchTask] = \
                         await asyncio.get_running_loop().run_in_executor(
                             None, self.parser, self.url, data

@@ -1,5 +1,4 @@
 import argparse
-
 import crawler
 
 parser = argparse.ArgumentParser(description='Web-crawler.')

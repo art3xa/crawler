@@ -1,7 +1,10 @@
 import unittest
+from yarl import URL
+
 from crawler import WrapperForHTMLParser
 from unittest.mock import patch, mock_open
 from crawler import FetchTask
+
 
 class ParserTest(unittest.TestCase):
     def test_single_url(self):
@@ -20,20 +23,35 @@ class ParserTest(unittest.TestCase):
         self.assertEqual(['https://www.google.com', 'https://vk.com'], res)
 
 
-
-
-
-
 class TestFileWriter(unittest.TestCase):
-    def test_file_writer(self):
-        fake_file_path = "fake/file/path"
-        content = "Message to write on file to be written"
-        with patch('examples.write_on_file.file_writer.open', mock_open()) as mocked_file:
-            FetchTask().write(fake_file_path, content)
+    def test_parser(self):
+        with patch('builtins.open', mock_open()) as m:
+            task = FetchTask(1, URL('https://www.google.com'), 1)
+            task.parser('https://www.google.com', '<a href="https://www.google.com">Google</a>')
+            m.assert_called_once_with('\\CrawlerDownloads\\\\www.google.com.html', 'w')
 
-            # assert if opened file on write mode 'w'
-            mocked_file.assert_called_once_with(fake_file_path, 'w')
+    def test_parser_with_no_url(self):
+        with patch('builtins.open', mock_open()) as m:
+            task = FetchTask(1, URL('https://www.google.com'), 1)
+            task.parser('https://www.google.com', '<a>Google</a>')
+            m.assert_called_once_with('\\CrawlerDownloads\\\\www.google.com.html', 'w')
 
-            # assert if write(content) was called from the file opened
-            # in another words, assert if the specific content was written in file
-            mocked_file().write.assert_called_once_with(content)
+    def test_parser_with_multiple_urls(self):
+        with patch('builtins.open', mock_open()) as m:
+            task = FetchTask(1, URL('https://www.google.com'), 1)
+            task.parser('https://www.google.com', '<a href="https://www.google.com">Google</a><a href="https://vk.com">Vk</a>')
+            m.assert_called_once_with('\\CrawlerDownloads\\\\www.google.com.html', 'w')
+
+    @patch('builtins.open', new_callable=mock_open)
+    def test_parser_with_multiple_urls_and_no_url(self, mock_file):
+        handle = mock_file()
+        task = FetchTask(1, URL('https://www.google.com'), 1)
+        task.parser('https://www.google.com', '<a href="https://www.google.com">Google</a><a href="https://vk.com">Vk</a><a>Google</a>')
+        handle.write.assert_called_once_with('<a href="\\CrawlerDownloads\\\\www.google.com.html">Google</a><a href="https://vk.com">Vk</a><a>Google</a>')
+
+    @patch('builtins.open', new_callable=mock_open)
+    def test_parser_with_multiple_urls_and_no_url_and_no_href(self, mock_file):
+        handle = mock_file()
+        task = FetchTask(1, URL('https://www.google.com'), 1)
+        task.parser('https://www.google.com', '<a href="https://www.google.com">Google</a><a href="https://vk.com">Vk</a><a>Google</a><a>Google</a>')
+        handle.write.assert_called_once_with('<a href="\\CrawlerDownloads\\\\www.google.com.html">Google</a><a href="https://vk.com">Vk</a><a>Google</a><a>Google</a>')
