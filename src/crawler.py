@@ -82,9 +82,8 @@ class FetchTask(Task):
         self.save_page(self.url, data, clear_no_filter_urls)
         return res
 
-    def save_page(self, url, data, parsed_urls):
+    def format_path(self, url: URL, data: str, parsed_urls):
         temp = data
-        parsed_urls = list(map(str, parsed_urls))
         for i in range(len(parsed_urls)):
             path = ""
             if "http" in parsed_urls[i][0:4] and '.' in parsed_urls[i]:
@@ -102,14 +101,25 @@ class FetchTask(Task):
             path = path.replace("//", "/")
             if "&" not in path and "=" not in path:
                 temp = temp.replace(f'"{parsed_urls[i]}"', f'"{path}"')
+        return temp
 
+    def save_page(self, url, data, parsed_urls):
+        parsed_urls = list(map(str, parsed_urls))
+        temp = self.format_path(url, data, parsed_urls)
+        path = self.format_path_html(url)
+        self.save(path, temp)
+
+    def format_path_html(self, url):
         path = self.Downloads + url.host + url.path
         path = path.replace("/", "\\")
         if path[-1] == '\\':
             path = path[0:-1] + ".html"
         else:
             path += ".html"
+        return path
 
+    @staticmethod
+    def save(path, temp):
         lock.acquire()
         if not os.path.exists(os.path.dirname(path)):
             os.makedirs(os.path.dirname(path))
