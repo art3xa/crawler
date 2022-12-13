@@ -20,15 +20,15 @@
 
 ## Состав
 
-* Запуск: `main.py`
-* Логика: `crawler.py`
+* Запуск: `crawler.py`
+* Логика: `src/logic.py`
 * Модули: `src/`
 
 ## Консольная версия
 
-Справка по запуску: `python src/main.py --help`
+Справка по запуску: `python crawler.py --help`
 
-Пример запуска: `python src/main.py {link}`
+Пример запуска: `python crawler.py {link}`
 
 ## Подробности реализации
 

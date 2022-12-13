@@ -1,39 +1,26 @@
 import asyncio
 import os
+import threading
 import urllib.robotparser
 from dataclasses import dataclass
-from typing import Optional, List
-import re
-import aiohttp
-from lxml import html
-from yarl import URL
-import threading
+from typing import List
 
-MAX_DEPTH = 3
+import aiohttp
+from yarl import URL
+
+from src.html_parser import WrapperForHTMLParser
+
 PARSED_URLS = set()
 VISITED_HOSTS = {}
-
-url_re = re.compile(r"https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)")
 lock = threading.Lock()
 
 
 @dataclass
 class Task:
+    """
+    This class is used to store all the task arguments
+    """
     tid: int
-
-
-class WrapperForHTMLParser:
-    @staticmethod
-    def parse_links(data):
-        tree = html.fromstring(data)
-        link_list = tree.xpath('//a')
-        result = []
-        for link in link_list:
-            url = str(link.get('href'))
-            if re.match(url_re, url) or url[0] == "/":
-                result.append(url)
-
-        return result
 
 
 @dataclass
@@ -43,7 +30,15 @@ class FetchTask(Task):
     depth: int
     Downloads: str = r"\CrawlerDownloads\\"
 
-    def parser(self, cur_page_link, data: str) -> List['FetchTask']:
+    def parser(self, cur_page_link, data: str, MAX_DEPTH: int) -> List[
+        'FetchTask']:
+        """
+        Парсит html страницу
+        :param cur_page_link:
+        :param data:
+        :param MAX_DEPTH:
+        :return:
+        """
         if self.depth + 1 > MAX_DEPTH:
             return []
         res = []
@@ -83,12 +78,19 @@ class FetchTask(Task):
         return res
 
     def format_path(self, url: URL, data: str, parsed_urls):
+        """
+        Форматирует путь для сохранения html страницы
+        :param url:
+        :param data:
+        :param parsed_urls:
+        :return:
+        """
         temp = data
         for i in range(len(parsed_urls)):
             path = ""
             if "http" in parsed_urls[i][0:4] and '.' in parsed_urls[i]:
                 path = self.Downloads + \
-                    URL(parsed_urls[i]).host + URL(parsed_urls[i]).path
+                       URL(parsed_urls[i]).host + URL(parsed_urls[i]).path
                 path = path.replace("/", "\\")
                 if path[-1] == '\\':
                     path = path[0:-1] + ".html"
@@ -104,12 +106,24 @@ class FetchTask(Task):
         return temp
 
     def save_page(self, url: URL, data: str, parsed_urls: List[URL]):
+        """
+        Сохраняет html страницу
+        :param url: URL
+        :param data: html страница
+        :param parsed_urls: список ссылок на странице
+        """
         parsed_urls = list(map(str, parsed_urls))
         temp = self.format_path(url, data, parsed_urls)
         path = self.format_path_html(url)
+        print(path)
         self.save(path, temp)
 
     def format_path_html(self, url: URL) -> str:
+        """
+        Форматирует путь для сохранения html страницы
+        :param url: URL
+        :return:
+        """
         path = self.Downloads + url.host + url.path
         path = path.replace("/", "\\")
         if path[-1] == '\\':
@@ -120,6 +134,12 @@ class FetchTask(Task):
 
     @staticmethod
     def save(path: str, temp: str) -> None:
+        """
+        Сохраняет html страницу в файл
+        :param path:
+        :param temp:
+        :return:
+        """
         lock.acquire()
         if not os.path.exists(os.path.dirname(path)):
             os.makedirs(os.path.dirname(path))
@@ -129,6 +149,11 @@ class FetchTask(Task):
         lock.release()
 
     async def perform(self, pool):
+        """
+        Выполняет задачу
+        :param pool:
+        :return:
+        """
         user_agent = {
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
                           'AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -137,75 +162,13 @@ class FetchTask(Task):
         }
 
         async with aiohttp.ClientSession() as session:
-            async with session.get(self.url, headers=user_agent, allow_redirects=True) as resp:
+            async with session.get(self.url, headers=user_agent,
+                                   allow_redirects=True) as resp:
                 if resp.content_type == 'text/html':
                     data = await resp.text()
                     list_tasks: List[FetchTask] = \
                         await asyncio.get_running_loop().run_in_executor(
-                            None, self.parser, self.url, data
-                    )
+                            None, self.parser, self.url, data, pool.max_depth
+                        )
                     for task in list_tasks:
                         await pool.queue.put(task)
-
-
-class Pool:
-    def __init__(self, max_rate: int, interval: int = 1,
-                 concurrent_level: Optional[int] = None):
-        self.max_rate = max_rate
-        self.interval = interval
-        self.concurrent_level = concurrent_level
-        self.is_running = False
-        self.queue = asyncio.Queue()
-        self._scheduler_task: Optional[asyncio.Task] = None
-        self._semaphore = asyncio.Semaphore(concurrent_level or max_rate)
-        self._concurrent_workers = 0
-        self._stop_event = asyncio.Event()
-
-    async def _scheduler(self):
-        while self.is_running:
-            for _ in range(self.max_rate):
-                async with self._semaphore:
-                    task = await self.queue.get()
-                    asyncio.create_task(self._worker(task))
-            await asyncio.sleep(self.interval)
-
-    def start(self):
-        self.is_running = True
-        self._scheduler_task = asyncio.create_task(self._scheduler())
-
-    async def _worker(self, task: FetchTask):
-        async with self._semaphore:
-            self._concurrent_workers += 1
-            await task.perform(self)
-            self.queue.task_done()
-        self._concurrent_workers -= 1
-        if not self.is_running and self._concurrent_workers == 0:
-            self._stop_event.set()
-
-    async def stop(self):
-        self.is_running = False
-        self._scheduler_task.cancel()
-        if self._concurrent_workers != 0:
-            await self._stop_event.wait()
-
-
-async def async_start(pool, url):
-    await pool.queue.put(FetchTask(
-        tid=1,
-        url=URL(url),
-        depth=1))
-    pool.start()
-    await pool.queue.join()
-    await pool.stop()
-
-
-def start(url, depth, threads_count):
-    loop = asyncio.get_event_loop()
-    pool = Pool(threads_count)
-    global MAX_DEPTH
-    MAX_DEPTH = depth
-    try:
-        loop.run_until_complete(async_start(pool, url))
-    except KeyboardInterrupt:
-        loop.run_until_complete(pool.stop())
-        loop.close()
